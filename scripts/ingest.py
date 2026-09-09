@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """下載並清洗新來源，寫入持久層。
 
-  python scripts/ingest.py --backfill        回填 111S4 起所有季檔（一次性，約 1.8 GB）
-  python scripts/ingest.py                   只抓尚未收錄的旬檔（CI 每月 1/11/21 用，約 14 MB）
+  python scripts/ingest.py --backfill        首次回填 111S4 起所有季檔（約 1.8 GB）
+  python scripts/ingest.py                   收錄尚未收錄的旬檔與新季檔（平時約 14 MB）
   python scripts/ingest.py --keep-zip        保留 .cache 內的 zip（預設下載後即刪，省磁碟）
+
+尚未收錄的季檔一律納入待辦，因此新季發布時（每季一份，約 120 MB）平時執行即會
+自動補齊——旬檔僅保留 6 旬，中間必然出現缺口，只有季檔能補回。但待辦季檔超過
+MAX_AUTO_SEASONS 份時會要求明確加上 --backfill，避免 CI 意外拉取 1.8 GB。
 """
 import argparse
 import csv
@@ -19,12 +23,12 @@ from zones import zones_of                     # noqa: E402
 
 CACHE = os.path.join(store.ROOT, ".cache")
 BACKFILL_FROM = "111S4"     # 涵蓋交易月 112/01 起所有登記案件
+MAX_AUTO_SEASONS = 2        # 未加 --backfill 時允許自動收錄的季檔份數上限
 TAICHUNG = "b"
 
 
 def wanted_seasons():
-    all_s = sorted(fetch.list_seasons())
-    return [s for s in all_s if s >= BACKFILL_FROM]
+    return [s for s in sorted(fetch.list_seasons()) if s >= BACKFILL_FROM]
 
 
 def ingest_source(kind, code, rows_out, seen):
@@ -65,14 +69,19 @@ def main():
     rows, seen = store.load_records()
     print("持久層現有 %d 筆，已收錄 %d 個來源" % (len(rows), len(done)), flush=True)
 
-    todo = []
-    if args.backfill:
-        todo += [("season", s) for s in wanted_seasons()]
-    todo += [("history", p) for p in fetch.list_periods()]
-    todo = [(k, c) for k, c in todo if "%s:%s" % (k, c) not in done]
+    seasons = [s for s in wanted_seasons() if "season:%s" % s not in done]
+    periods = [p for p in fetch.list_periods() if "history:%s" % p not in done]
+    if len(seasons) > MAX_AUTO_SEASONS and not args.backfill:
+        raise SystemExit(
+            "待辦季檔 %d 份（%s）超過自動上限 %d，下載量約 %.1f GB。\n"
+            "確認要下載請加上 --backfill。"
+            % (len(seasons), "、".join(seasons), MAX_AUTO_SEASONS, len(seasons) * 0.12))
+
+    todo = [("season", s) for s in seasons] + [("history", p) for p in periods]
     if not todo:
         print("無新來源，持久層已是最新。")
         return
+    print("待辦：%d 份季檔、%d 份旬檔" % (len(seasons), len(periods)), flush=True)
 
     for kind, code in todo:
         kept, dup, path = ingest_source(kind, code, rows, seen)
