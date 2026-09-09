@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetch                                                       # noqa: E402
 import store                                                       # noqa: E402
 from clean import BUILDING_TYPES, SPECIAL_REMARKS, ym_index        # noqa: E402
-from zones import STREET_LI, ZONES, zones_of                     # noqa: E402
+from zones import DISTRICTS, ZONES, streets_of_zone, zones_of    # noqa: E402
 
 OUT = os.path.join(store.ROOT, "docs", "data.json")
 
@@ -37,7 +37,18 @@ COVERAGE_WINDOW = {"month": 12, "quarter": 4}
 # 合併樣本移動中位數的視窗期數（月頻為 3 個月、季頻為 3 季）
 ROLL_WINDOW = 3
 BASES = ("new", "all")
-SERIES = ["tw", "taichung"] + list(ZONES)
+
+# 序列清單：全國 → 縣市 → 行政區 → 生活圈。順序即前端晶片與表格的呈現順序。
+SERIES_META = (
+    [{"key": "tw", "label": "全台灣", "kind": "national"},
+     {"key": "taichung", "label": "台中市", "kind": "city"}]
+    + [{"key": d["key"], "label": d["label"], "kind": "district"} for d in DISTRICTS.values()]
+    + [{"key": k, "label": z["label"], "kind": "zone"} for k, z in ZONES.items()]
+)
+SERIES = [s["key"] for s in SERIES_META]
+
+# 預設勾選：全國、縣市與各行政區全區，生活圈由使用者自行開啟
+DEFAULT_SERIES = ["tw", "taichung"] + [d["key"] for d in DISTRICTS.values()]
 
 
 def _median(v):
@@ -56,8 +67,7 @@ def series_keys(r):
     ks = ["tw"]
     if r["cc"] == TAICHUNG:
         ks.append("taichung")
-        if r["dist"] == "烏日區":
-            ks.extend(zones_of(r["addr"]))
+        ks.extend(zones_of(r["dist"], r["addr"]))
     return ks
 
 
@@ -189,17 +199,13 @@ def main():
                 "excluded_remarks": SPECIAL_REMARKS,
                 "max_registration_lag_months": 6,
             },
+            "series": SERIES_META,
+            "default_series": DEFAULT_SERIES,
             "zones": {
-                k: {
-                    "label": v["label"],
-                    "li": v["li"],
-                    "streets": (sorted((s for s, li in STREET_LI.items() if li in v["li"]),
-                                       key=len, reverse=True) if v["li"] else None),
-                }
+                k: {"label": v["label"], "dist": v["dist"], "li": v["li"],
+                    "basis": v["basis"], "streets": streets_of_zone(k)}
                 for k, v in ZONES.items()
             },
-            "series_labels": dict({"tw": "全台灣", "taichung": "台中市"},
-                                  **{k: v["label"] for k, v in ZONES.items()}),
         },
         "month": {"labels": mlabels, "data": emit(months, mlabels)},
         "quarter": {"labels": qlabels, "data": emit(quarters, qlabels)},

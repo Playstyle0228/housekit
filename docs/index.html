@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>烏日新成屋實質成交單價與回檔走勢</title>
+<title>台中實質成交單價與回檔走勢</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -20,7 +20,7 @@
         <div class="inline-block bg-emerald-50 text-emerald-800 text-xs px-2.5 py-1 rounded-md font-bold mb-2 border border-emerald-100">
           資料來源：內政部實價登錄　已剔除交屋遞延與特殊交易　已剔除車位
         </div>
-        <h1 class="text-2xl md:text-3xl font-bold text-slate-900">烏日新成屋實質成交單價與回檔走勢</h1>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-900">實質成交單價與回檔走勢</h1>
         <p class="text-sm text-slate-500 mt-1" id="subtitle">載入中…</p>
       </div>
       <div class="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap">
@@ -30,8 +30,19 @@
     <div id="provenance" class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs"></div>
   </header>
 
-  <div class="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-md border border-slate-800">
-    <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pb-5 border-b border-slate-800">
+  <div class="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-md border border-slate-800 space-y-5">
+
+    <!-- 關注區域 -->
+    <div>
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <span class="text-sm font-medium text-slate-200">關注區域</span>
+        <span class="text-xs text-slate-500">勾選的區域會同步套用到走勢圖、統計卡與下方明細表</span>
+      </div>
+      <div id="seriesChips" class="space-y-2.5"></div>
+    </div>
+
+    <!-- 統計設定 -->
+    <div class="pt-4 border-t border-slate-800 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
       <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-400">頻率</span>
@@ -50,7 +61,7 @@
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-400">取值</span>
           <div class="inline-flex rounded-lg overflow-hidden border border-slate-700" id="smoothToggle">
-            <button data-v="raw"  class="px-3 py-1.5 text-sm font-medium">單期</button>
+            <button data-v="raw" class="px-3 py-1.5 text-sm font-medium">單期</button>
             <button data-v="roll" class="px-3 py-1.5 text-sm font-medium" id="rollBtn">3 期合併</button>
           </div>
         </div>
@@ -61,14 +72,18 @@
       </div>
       <div class="text-xs text-slate-400 tnum">漲跌幅 =（最新中位數 − 基準期中位數）÷ 基準期中位數</div>
     </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-5" id="cards"></div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" id="cards"></div>
   </div>
 
   <div class="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100">
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
       <div>
         <h2 class="text-lg font-semibold text-slate-900">實質成交單價走勢</h2>
-        <p class="text-xs text-slate-400 mt-0.5">虛線＋空心點 = 樣本數不足（n &lt; <span id="minNote">3</span>），數值仍為真實成交但代表性有限；線段中斷 = 該期完全無成交，不做內插推估。低樣本分區建議切換「3 期合併」。點擊圖例可切換圖層</p>
+        <p class="text-xs text-slate-400 mt-0.5">
+          虛線＋空心點 = 樣本數不足（n &lt; <span id="minNote">3</span>），數值仍為真實成交但代表性有限；
+          線段中斷 = 該期完全無成交，不做內插推估。低樣本區域建議切換「3 期合併」
+        </p>
       </div>
       <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-medium tnum" id="chartStatus"></span>
     </div>
@@ -103,39 +118,41 @@
 </div>
 
 <script>
-const COLORS = {
-  tw:           { c: "#94a3b8", w: 1.8 },
-  taichung:     { c: "#2563eb", w: 1.8 },
-  wuri_all:     { c: "#d97706", w: 3.2 },
-  wuri_hsr:     { c: "#7c3aed", w: 2.2 },
-  wuri_mingdao: { c: "#0d9488", w: 2.8 },
-  wuri_station: { c: "#e11d48", w: 2.0 },
-  wuri_xinan:   { c: "#65a30d", w: 2.0 }
+/* 固定色：全國與縣市用中性色，行政區用暖色，其餘生活圈依序取用色盤。
+   色盤讓日後在 zones.py 新增區域時不必改前端。 */
+const FIXED_COLORS = {
+  tw:        { c: "#94a3b8", w: 1.8 },
+  taichung:  { c: "#2563eb", w: 1.8 },
+  d_wuri:    { c: "#d97706", w: 3.2 },
+  d_nantun:  { c: "#db2777", w: 3.2 }
 };
-const ORDER = ["tw", "taichung", "wuri_all", "wuri_hsr", "wuri_mingdao",
-               "wuri_station", "wuri_xinan"];
-// 七條線同時顯示過於雜亂；預設只開主要比較對象，其餘點圖例即可開啟
-const DEFAULT_HIDDEN = ["tw", "wuri_station", "wuri_xinan"];
+const PALETTE = ["#7c3aed", "#0d9488", "#e11d48", "#65a30d",
+                 "#c026d3", "#0891b2", "#ca8a04", "#4f46e5", "#9333ea"];
+const KIND_LABEL = { national: "全國", city: "縣市", district: "行政區", zone: "生活圈" };
+const KIND_ORDER = ["national", "city", "district", "zone"];
 
-let DATA = null, freq = "quarter", ageBase = "new", smooth = "raw", chart = null;
+let DATA = null, SERIES = [], COLORS = {};
+let freq = "quarter", ageBase = "new", smooth = "raw", chart = null;
+let visible = new Set();
 
-function cur()        { return DATA[freq]; }
-function labels()     { return cur().labels; }
-function series(sk)   { return cur().data[sk][ageBase]; }
+function cur()      { return DATA[freq]; }
+function labels()   { return cur().labels; }
+function active()   { return SERIES.filter(function (s) { return visible.has(s.key); }); }
+function labelOf(k) { return (SERIES.find(function (s) { return s.key === k; }) || {}).label || k; }
 
 /* 依「取值」設定回傳中位數、樣本數與樣本不足旗標。
    roll = 視窗內各期交易明細合併後取中位數（非各期中位數再平均）。
    low  = 0 < n < min_n，數值照樣輸出，僅加註樣本不足。 */
-function pick(sk) {
-  const s = series(sk);
+function pick(k) {
+  const s = cur().data[k][ageBase];
   return smooth === "roll"
     ? { v: s.roll, n: s.roll_n, low: s.roll_low }
     : { v: s.median, n: s.n, low: s.low };
 }
 
 // 該序列最後一期有數據的索引，全無資料回 -1
-function lastIdx(sk) {
-  const m = pick(sk).v;
+function lastIdx(k) {
+  const m = pick(k).v;
   for (let i = m.length - 1; i >= 0; i--) if (m[i] !== null) return i;
   return -1;
 }
@@ -151,41 +168,77 @@ function isProvisional(lb) {
   return freq === "month" && DATA.meta.provisional_months.indexOf(lb) >= 0;
 }
 
+/* ---------- 關注區域晶片 ---------- */
+function renderChips() {
+  const box = document.getElementById("seriesChips");
+  box.innerHTML = KIND_ORDER.map(function (kind) {
+    const group = SERIES.filter(function (s) { return s.kind === kind; });
+    if (!group.length) return "";
+    return '<div class="flex flex-wrap items-center gap-2">'
+      + '<span class="text-[11px] text-slate-500 w-12 shrink-0">' + KIND_LABEL[kind] + '</span>'
+      + group.map(function (s) {
+          const on = visible.has(s.key);
+          return '<button data-k="' + s.key + '" class="chip inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full '
+            + 'text-xs font-medium border transition-colors '
+            + (on ? "bg-white text-slate-900 border-white"
+                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200") + '">'
+            + '<span class="w-2 h-2 rounded-full shrink-0" style="background:' + COLORS[s.key].c
+            + (on ? "" : ";opacity:.45") + '"></span>' + s.label + '</button>';
+        }).join("")
+      + '</div>';
+  }).join("");
+
+  box.querySelectorAll(".chip").forEach(function (b) {
+    b.onclick = function () {
+      const k = b.dataset.k;
+      if (visible.has(k)) {
+        if (visible.size === 1) return;      // 至少保留一個區域
+        visible.delete(k);
+      } else {
+        visible.add(k);
+      }
+      renderChips();
+      renderAll(+document.getElementById("basePeriod").value);
+    };
+  });
+}
+
 /* ---------- 基準期下拉 ---------- */
 function fillBasePeriod(keep) {
   const sel = document.getElementById("basePeriod");
-  const a = pick("wuri_all"), lb = labels(), anchor = a.v;
+  const lb = labels();
+  // 以第一個勾選的區域作為下拉提示的參考值
+  const ak = (active()[0] || SERIES[0]).key;
+  const a = pick(ak);
   sel.innerHTML = "";
   lb.forEach(function (l, i) {
     const o = document.createElement("option");
     o.value = i;
-    o.textContent = l + (anchor[i] !== null
-      ? "　烏日全區 " + anchor[i].toFixed(1) + " 萬" + (a.low[i] ? " ⚠" : "")
-      : "　（烏日該期無成交）");
+    o.textContent = l + (a.v[i] !== null
+      ? "　" + labelOf(ak) + " " + a.v[i].toFixed(1) + " 萬" + (a.low[i] ? " ⚠" : "")
+      : "　（" + labelOf(ak) + "該期無成交）");
     sel.appendChild(o);
   });
-  // 預設落在 113 年波段高點；切換屋齡基準／取值時沿用同一期別
-  let chosen = (keep !== undefined && keep !== null && keep < lb.length) ? keep : -1;
+  // 預設落在 113 年的相對高點；切換設定時沿用同一期別
+  let chosen = (keep !== undefined && keep !== null && keep >= 0 && keep < lb.length) ? keep : -1;
   if (chosen < 0) {
     let best = -1, bestV = -1;
     lb.forEach(function (l, i) {
-      if (l.indexOf("113") === 0 && anchor[i] !== null && anchor[i] > bestV) { bestV = anchor[i]; best = i; }
+      if (l.indexOf("113") === 0 && a.v[i] !== null && a.v[i] > bestV) { bestV = a.v[i]; best = i; }
     });
     chosen = best >= 0 ? best : 0;
   }
   sel.value = chosen;
 }
 
-/* ---------- 卡片 ---------- */
+/* ---------- 統計卡 ---------- */
 function renderCards() {
-  const bi = +document.getElementById("basePeriod").value;
-  const lb = labels();
-  document.getElementById("cards").innerHTML = ORDER.map(function (sk) {
-    const s = pick(sk), li = lastIdx(sk);
-    const label = DATA.meta.series_labels[sk];
+  const bi = +document.getElementById("basePeriod").value, lb = labels();
+  document.getElementById("cards").innerHTML = active().map(function (ser) {
+    const k = ser.key, s = pick(k), li = lastIdx(k);
     if (li < 0) {
       return '<div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700">'
-        + '<div class="text-xs text-slate-300">' + label + '</div>'
+        + '<div class="text-xs text-slate-300">' + ser.label + '</div>'
         + '<div class="mt-3 text-sm text-slate-500">此屋齡基準下全期無成交</div></div>';
     }
     const nowV = s.v[li], baseV = s.v[bi];
@@ -199,17 +252,17 @@ function renderCards() {
     return '<div class="bg-slate-800/80 p-4 rounded-xl border '
       +   (shaky ? "border-amber-600/60" : "border-slate-700") + '">'
       + '<div class="flex justify-between items-start gap-2">'
-      +   '<span class="text-xs text-slate-300 leading-tight">' + label + '</span>'
+      +   '<span class="text-xs leading-tight flex items-center gap-1.5">'
+      +     '<span class="w-2 h-2 rounded-full shrink-0" style="background:' + COLORS[k].c + '"></span>'
+      +     '<span class="text-slate-300">' + ser.label + '</span></span>'
       +   '<span class="text-[11px] px-2 py-0.5 rounded-full ' + badge + ' font-bold whitespace-nowrap">'
       +     (pct === null ? "基準無成交" : (up ? "▲ " : "▼ ") + Math.abs(pct).toFixed(2) + "%")
       +   '</span></div>'
       + '<div class="mt-2 flex items-baseline gap-1.5">'
       +   '<span class="text-2xl font-black ' + (shaky ? "text-amber-200" : "text-white") + ' tnum">'
-      +     nowV.toFixed(1) + '</span>'
-      +   '<span class="text-xs text-slate-400">萬/坪</span></div>'
+      +     nowV.toFixed(1) + '</span><span class="text-xs text-slate-400">萬/坪</span></div>'
       + '<div class="text-[11px] tnum ' + (s.low[li] ? "text-amber-400" : "text-slate-400") + '">'
-      +   lb[li] + '　n=' + s.n[li]
-      +   (s.low[li] ? "　⚠ 樣本不足" : "")
+      +   lb[li] + '　n=' + s.n[li] + (s.low[li] ? "　⚠ 樣本不足" : "")
       +   (isProvisional(lb[li]) ? "　未定案" : "") + '</div>'
       + '<div class="text-xs text-slate-300 mt-2 flex justify-between gap-2 border-t border-slate-700/80 pt-2 tnum">'
       +   '<span>基準 ' + lb[bi] + '：'
@@ -220,28 +273,27 @@ function renderCards() {
   }).join("");
 }
 
-/* ---------- 圖 ---------- */
+/* ---------- 走勢圖 ---------- */
 function renderChart() {
   const lb = labels();
-  const ds = ORDER.map(function (sk) {
-    const s = pick(sk);
+  const ds = active().map(function (ser) {
+    const k = ser.key, s = pick(k);
     return {
-      label: DATA.meta.series_labels[sk],
+      label: ser.label,
       data: s.v,
       _n: s.n,
       _low: s.low,
-      borderColor: COLORS[sk].c,
-      backgroundColor: COLORS[sk].c + "14",
-      borderWidth: COLORS[sk].w,
+      borderColor: COLORS[k].c,
+      backgroundColor: COLORS[k].c + "14",
+      borderWidth: COLORS[k].w,
       tension: 0,              // 直線連接：低樣本序列用曲線平滑會製造不存在的過衝
       pointHoverRadius: 6,
       spanGaps: false,         // 該期無成交則不連線，避免視覺上的推估
       // 樣本不足的點以空心放大呈現、其相鄰線段改虛線，數值照樣顯示
       pointRadius: function (c) { return s.low[c.dataIndex] ? 3.5 : 2; },
-      pointBackgroundColor: function (c) { return s.low[c.dataIndex] ? "#ffffff" : COLORS[sk].c; },
-      pointBorderColor: COLORS[sk].c,
+      pointBackgroundColor: function (c) { return s.low[c.dataIndex] ? "#ffffff" : COLORS[k].c; },
+      pointBorderColor: COLORS[k].c,
       pointBorderWidth: function (c) { return s.low[c.dataIndex] ? 2 : 1; },
-      hidden: DEFAULT_HIDDEN.indexOf(sk) >= 0,
       segment: {
         borderDash: function (c) {
           return (s.low[c.p0DataIndex] || s.low[c.p1DataIndex]) ? [4, 3] : undefined;
@@ -258,7 +310,7 @@ function renderChart() {
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { position: "top", labels: { boxWidth: 14, usePointStyle: true, font: { size: 11 } } },
+        legend: { display: false },        // 以上方「關注區域」晶片作為圖例
         tooltip: {
           callbacks: {
             label: function (c) {
@@ -283,16 +335,17 @@ function renderChart() {
   document.getElementById("chartStatus").textContent =
     "基準期 " + lb[bi] + "　｜　" + (ageBase === "new" ? "新成屋 ≤5年" : "全屋齡")
     + "　｜　" + (freq === "month" ? "月頻" : "季頻")
-    + "　｜　" + (smooth === "roll" ? DATA.meta.roll_window + " 期合併" : "單期");
+    + "　｜　" + (smooth === "roll" ? DATA.meta.roll_window + " 期合併" : "單期")
+    + "　｜　" + active().length + " 區";
 }
 
-/* ---------- 表 ---------- */
+/* ---------- 明細表 ---------- */
 function renderTable() {
-  const bi = +document.getElementById("basePeriod").value, lb = labels();
+  const bi = +document.getElementById("basePeriod").value, lb = labels(), act = active();
   document.querySelector("#table thead").innerHTML =
-    '<tr><th class="py-3 px-3">期別</th>' + ORDER.map(function (sk) {
-      return '<th class="py-3 px-3 whitespace-nowrap" style="color:' + COLORS[sk].c + '">'
-        + DATA.meta.series_labels[sk] + '</th><th class="py-3 px-3 whitespace-nowrap">漲跌</th>';
+    '<tr><th class="py-3 px-3">期別</th>' + act.map(function (ser) {
+      return '<th class="py-3 px-3 whitespace-nowrap" style="color:' + COLORS[ser.key].c + '">'
+        + ser.label + '</th><th class="py-3 px-3 whitespace-nowrap">漲跌</th>';
     }).join("") + '</tr>';
 
   document.querySelector("#table tbody").innerHTML = lb.map(function (l, i) {
@@ -302,14 +355,13 @@ function renderTable() {
       +   (hi ? ' <span class="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded">基準</span>' : "")
       +   (isProvisional(l) ? ' <span class="text-[10px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">未定案</span>' : "")
       + '</td>'
-      + ORDER.map(function (sk) {
-          const s = pick(sk), v = s.v[i], bv = s.v[bi];
+      + act.map(function (ser) {
+          const s = pick(ser.key), v = s.v[i], bv = s.v[bi];
           const pct = (v === null || bv === null) ? null : ((v - bv) / bv) * 100;
           const lo = s.low[i];
           return '<td class="py-2.5 px-3 whitespace-nowrap' + (lo ? " bg-amber-50/60" : "") + '">'
-            + (v === null
-                ? '<span class="text-slate-300">無成交</span>'
-                : '<span class="' + (lo ? "text-amber-700" : "") + '">' + v.toFixed(1) + '</span>')
+            + (v === null ? '<span class="text-slate-300">無成交</span>'
+                          : '<span class="' + (lo ? "text-amber-700" : "") + '">' + v.toFixed(1) + '</span>')
             + '<span class="text-[11px] ml-1 ' + (lo ? "text-amber-600 font-medium" : "text-slate-400") + '">('
             + s.n[i] + (lo ? " ⚠" : "") + ')</span></td>'
             + '<td class="py-2.5 px-3' + (lo ? " bg-amber-50/60" : "") + '">' + pctHtml(pct) + '</td>';
@@ -330,9 +382,7 @@ function applyFilter() {
 function renderMeta() {
   const m = DATA.meta, lb = labels();
   document.getElementById("subtitle").textContent =
-    "統計區間 " + lb[0] + " ～ " + lb[lb.length - 1]
-    + "　｜　" + ["全台灣", "台中市"].concat(
-        Object.keys(m.zones).map(function (k) { return m.zones[k].label; })).join("、");
+    "統計區間 " + lb[0] + " ～ " + lb[lb.length - 1] + "　｜　可選 " + SERIES.length + " 個統計範圍";
   document.getElementById("minNote").textContent = m.min_n;
 
   document.getElementById("provenance").innerHTML = [
@@ -349,9 +399,8 @@ function renderMeta() {
   const d = m.definition;
   const zoneHtml = Object.keys(m.zones).map(function (k) {
     const z = m.zones[k];
-    if (!z.streets) return '<p class="mb-1"><span class="font-medium">' + z.label + '</span>：烏日區全區，不做門牌篩選</p>';
     return '<p class="mb-1"><span class="font-medium">' + z.label + '</span>'
-      + '<span class="text-slate-400">（' + z.li.join("、") + '）</span>：'
+      + '<span class="text-slate-400">（' + z.dist + "・" + z.li.join("、") + '）</span>：'
       + z.streets.slice().sort(function (a, b) { return a.localeCompare(b, "zh-Hant"); }).join("、") + '</p>';
   }).join("");
 
@@ -362,8 +411,8 @@ function renderMeta() {
     + '<div><div class="font-semibold text-slate-800 mb-1">新成屋認定</div><p>' + d.new_build + '</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">代表值</div><p>' + d.statistic + '</p>'
     +   '<p class="mt-1">「' + m.roll_window + ' 期合併」是把視窗內各期的<strong>交易明細倒在一起</strong>後取中位數，'
-    +   '而非對各期中位數再平均。低樣本分區（明道商圈每季僅 5～16 筆）的單期中位數鋸齒劇烈，'
-    +   '合併後才有可讀趨勢，且不會憑空造出資料點；表格中的 n 會同步顯示合併後的樣本數。</p></div>'
+    +   '而非對各期中位數再平均。低樣本區域的單期中位數鋸齒劇烈，合併後才有可讀趨勢，'
+    +   '且不會憑空造出資料點；表格中的 n 會同步顯示合併後的樣本數。</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">納入建物型態</div><p>'
     +   d.building_types.join("、") + '（排除透天厝、店面、廠辦等含大量土地價值、單價不可比者）</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">交屋遞延剔除</div>'
@@ -374,23 +423,17 @@ function renderMeta() {
     +   '<p class="text-slate-500">' + d.excluded_remarks.join("、") + '</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">生活圈範圍（路街名 → 里 → 生活圈）</div>' + zoneHtml
     +   '<p class="mt-2 text-slate-500">實價登錄成屋檔沒有社區名稱或里別欄位（只有預售屋 B 檔才有「建案名稱」），'
-    +   '只有門牌字串，所以分區只能靠路街名比對。里別是把資料中實際出現的 50 條路街逐條做地理編碼'
+    +   '只有門牌字串，所以分區只能靠路街名比對。里別是把資料中實際出現的路街逐條做地理編碼'
     +   '（OpenStreetMap Nominatim，2026-09）取得，屬一次性離線作業，執行期不依賴外部服務。</p>'
-    +   '<p class="mt-1 text-slate-500">分區沿用樂居的四個生活圈。高鐵特區依都市計畫範圍涵蓋三和里、榮泉里、'
-    +   '學田里、湖日里；明道花園生活圈定義為中山路一段與興祥街交叉口半徑約 700 公尺，即九德里與仁德里'
-    +   '一帶（舊地名「楓樹腳」）；烏日車站生活圈為舊市區，即烏日里、東園里。兩種判準交叉驗證一致：'
-    +   '歸入明道花園的 9 條路距明道中學 170～678 公尺，全數在 700 公尺內；歸入烏日車站的 6 條路為'
-    +   '702～1261 公尺，全數在 700 公尺外。</p>'
-    +   '<p class="mt-1 text-slate-500">各生活圈刻意不重疊，未落入任一生活圈者僅計入烏日全區'
-    +   '（目前僅五光路 5 筆，佔烏日區 0.3%）。</p></div>'
+    +   '<p class="mt-1 text-slate-500">未落入任一生活圈的門牌仍計入其所屬行政區序列。各生活圈的認定依據與'
+    +   '已知分歧列於專案 README。</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">已知限制</div><ul class="list-disc pl-5 space-y-1">'
     +   '<li>最近 ' + m.provisional_months.length + ' 個月（' + (m.provisional_months.join("、") || "無")
     +     '）資料仍在陸續申報揭露，數值可能上修，圖表與表格標為未定案。</li>'
-    +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別<strong>仍輸出中位數</strong>並標記 ⚠：單筆成交的中位數就是該筆本身、統計代表性有限，但它是真實成交價，不予隱藏。該期完全無成交才輸出空值、圖上呈現斷點，不做內插推估。</li>'
-    +   '<li>明道花園生活圈屋齡結構偏舊、幾無新成屋供給，「新成屋」基準下多數期別為無成交或'
-    +     '僅 1～2 筆；跨區比較請切換至「全屋齡」才有可比性。</li>'
-    +   '<li>公園路（43 筆）經地理編碼屬湖日里，而湖日里在高鐵特區都市計畫範圍內，故歸為高鐵特區；'
-    +     '但樂居的區域分析文將「公園路重劃一帶」描述為舊市區。此為已知分歧。</li>'
+    +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別<strong>仍輸出中位數</strong>並標記 ⚠：單筆成交的中位數就是該筆本身、'
+    +     '統計代表性有限，但它是真實成交價，不予隱藏。該期完全無成交才輸出空值、圖上呈現斷點。</li>'
+    +   '<li>屋齡結構偏舊的生活圈幾無新成屋供給，「新成屋」基準下多數期別為無成交或僅 1～2 筆；'
+    +     '跨區比較請切換至「全屋齡」才有可比性。</li>'
     +   '<li>全台灣序列為 22 縣市合併中位數，各期縣市組成變動會影響數值，僅作背景基準線參考。</li>'
     +   '<li>季檔以登記日期而非交易日期切分，跨季合併已用「編號」去重。</li>'
     + '</ul></div>';
@@ -405,34 +448,46 @@ function paintToggle(id, val) {
   });
 }
 
-function redraw(keepBase) {
+function renderAll(keepBase) {
   fillBasePeriod(keepBase);
   renderCards(); renderChart(); renderTable();
 }
 
 function init() {
+  const m = DATA.meta;
+  SERIES = m.series;
+  let pi = 0;
+  SERIES.forEach(function (s) {
+    COLORS[s.key] = FIXED_COLORS[s.key] || { c: PALETTE[pi++ % PALETTE.length], w: 2.2 };
+  });
+  visible = new Set(m.default_series.filter(function (k) {
+    return SERIES.some(function (s) { return s.key === k; });
+  }));
+  if (!visible.size) visible = new Set([SERIES[0].key]);
+
   paintToggle("freqToggle", freq);
   paintToggle("baseToggle", ageBase);
   paintToggle("smoothToggle", smooth);
-  document.getElementById("rollBtn").textContent = DATA.meta.roll_window + " 期合併";
+  document.getElementById("rollBtn").textContent = m.roll_window + " 期合併";
   renderMeta();
-  redraw();
+  renderChips();
+  renderAll();
 
   document.querySelectorAll("#freqToggle button").forEach(function (b) {
     b.onclick = function () {
-      freq = b.dataset.v; paintToggle("freqToggle", freq); renderMeta(); redraw();
+      freq = b.dataset.v; paintToggle("freqToggle", freq); renderMeta(); renderAll();
     };
   });
   document.querySelectorAll("#baseToggle button").forEach(function (b) {
     b.onclick = function () {
       ageBase = b.dataset.v; paintToggle("baseToggle", ageBase);
-      redraw(+document.getElementById("basePeriod").value);
+      renderAll(+document.getElementById("basePeriod").value);
     };
   });
   document.querySelectorAll("#smoothToggle button").forEach(function (b) {
     b.onclick = function () {
       smooth = b.dataset.v; paintToggle("smoothToggle", smooth);
-      redraw(+document.getElementById("basePeriod").value);
+      renderAll(+document.getElementById("basePeriod").value);
     };
   });
   document.getElementById("basePeriod").onchange = function () {
