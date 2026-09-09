@@ -1,0 +1,5 @@
+.cache/
+*.zip
+*.part
+__pycache__/
+*.pyc

@@ -1,0 +1,58 @@
+name: sync-plvr
+
+# 內政部實價登錄每月 1、11、21 日揭露（每旬）。
+# 排程設在揭露後數小時，並用 UTC（台北時間 -8）。
+on:
+  schedule:
+    - cron: "0 2 1,11,21 * *"     # 台北時間 10:00
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "連季檔一起重新收錄（一次性，約 1.8 GB，耗時較久）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-plvr
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 收錄新來源（旬檔約 14 MB；backfill 時另加季檔）
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python scripts/ingest.py --backfill
+          else
+            python scripts/ingest.py
+          fi
+
+      - name: 聚合成 docs/data.json
+        run: python scripts/aggregate.py
+
+      - name: Commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs/data.json
+          if git diff --cached --quiet; then
+            echo "資料無變動，略過 commit"
+          else
+            git commit -m "chore(data): sync 實價登錄 $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: 部署 GitHub Pages
+        if: success()
+        run: echo "Pages 由 repo Settings → Pages → Source: main /docs 提供，push 後自動更新"

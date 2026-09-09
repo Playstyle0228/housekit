@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>烏日新成屋實質成交單價與回檔走勢</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif; }
+  .tnum { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased p-3 md:p-8">
+<div class="max-w-7xl mx-auto space-y-5">
+
+  <header class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <div class="inline-block bg-emerald-50 text-emerald-800 text-xs px-2.5 py-1 rounded-md font-bold mb-2 border border-emerald-100">
+          資料來源：內政部實價登錄　已剔除交屋遞延與特殊交易　已剔除車位
+        </div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-900">烏日新成屋實質成交單價與回檔走勢</h1>
+        <p class="text-sm text-slate-500 mt-1" id="subtitle">載入中…</p>
+      </div>
+      <div class="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap">
+        單位：萬元 / 坪（中位數）
+      </div>
+    </div>
+    <div id="provenance" class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs"></div>
+  </header>
+
+  <div class="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-md border border-slate-800">
+    <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 pb-5 border-b border-slate-800">
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">頻率</span>
+          <div class="inline-flex rounded-lg overflow-hidden border border-slate-700" id="freqToggle">
+            <button data-v="quarter" class="px-3 py-1.5 text-sm font-medium">季</button>
+            <button data-v="month" class="px-3 py-1.5 text-sm font-medium">月</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">屋齡基準</span>
+          <div class="inline-flex rounded-lg overflow-hidden border border-slate-700" id="baseToggle">
+            <button data-v="new" class="px-3 py-1.5 text-sm font-medium">新成屋 ≤5年</button>
+            <button data-v="all" class="px-3 py-1.5 text-sm font-medium">全屋齡</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">取值</span>
+          <div class="inline-flex rounded-lg overflow-hidden border border-slate-700" id="smoothToggle">
+            <button data-v="raw"  class="px-3 py-1.5 text-sm font-medium">單期</button>
+            <button data-v="roll" class="px-3 py-1.5 text-sm font-medium" id="rollBtn">3 期合併</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="basePeriod" class="text-xs text-slate-400">比較基準期</label>
+          <select id="basePeriod" class="bg-white text-slate-900 font-semibold px-3 py-1.5 rounded-lg text-sm border-0 shadow-sm focus:ring-2 focus:ring-amber-400 focus:outline-none tnum"></select>
+        </div>
+      </div>
+      <div class="text-xs text-slate-400 tnum">漲跌幅 =（最新中位數 − 基準期中位數）÷ 基準期中位數</div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 pt-5" id="cards"></div>
+  </div>
+
+  <div class="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900">實質成交單價走勢</h2>
+        <p class="text-xs text-slate-400 mt-0.5">線段中斷 = 樣本數不足（n &lt; <span id="minNote">3</span>），不做內插推估。低樣本分區建議切換「3 期合併」。點擊圖例可切換圖層</p>
+      </div>
+      <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-medium tnum" id="chartStatus"></span>
+    </div>
+    <div class="h-80 md:h-[26rem] w-full"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div>
+        <h3 class="font-semibold text-slate-800">各期中位數、樣本數與漲跌明細</h3>
+        <p class="text-xs text-slate-400 mt-0.5">綠色上漲、紅色回檔；灰字括號為樣本數 n</p>
+      </div>
+      <input type="text" id="filter" placeholder="搜尋期別（例：114/ 或 Q3）…"
+        class="text-xs border border-slate-200 px-3.5 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400" />
+    </div>
+    <div class="overflow-x-auto max-h-[32rem]">
+      <table class="w-full text-left text-sm tnum" id="table">
+        <thead class="bg-slate-50 sticky top-0 text-slate-600 border-b border-slate-200 shadow-sm z-10 text-xs"></thead>
+        <tbody class="divide-y divide-slate-100 text-slate-700 text-xs md:text-sm"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <details class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <summary class="font-semibold text-slate-800 cursor-pointer">統計方法、剔除規則與已知限制</summary>
+    <div id="method" class="mt-4 text-xs text-slate-600 space-y-4 leading-relaxed"></div>
+  </details>
+
+  <p class="text-center text-xs text-slate-400 pb-4">
+    資料來源：內政部不動產成交案件實際資訊資料供應系統。本頁為自動彙整之統計結果，非不動產估價報告。
+  </p>
+</div>
+
+<script>
+const COLORS = {
+  tw:           { c: "#94a3b8", w: 1.8 },
+  taichung:     { c: "#2563eb", w: 1.8 },
+  wuri_all:     { c: "#d97706", w: 3.0 },
+  wuri_hsr:     { c: "#7c3aed", w: 2.2 },
+  wuri_mingdao: { c: "#0d9488", w: 2.6 }
+};
+const ORDER = ["tw", "taichung", "wuri_all", "wuri_hsr", "wuri_mingdao"];
+
+let DATA = null, freq = "quarter", ageBase = "new", smooth = "raw", chart = null;
+
+function cur()        { return DATA[freq]; }
+function labels()     { return cur().labels; }
+function series(sk)   { return cur().data[sk][ageBase]; }
+
+/* 依「取值」設定回傳中位數與樣本數。
+   roll = 視窗內各期交易明細合併後取中位數（非各期中位數再平均）。 */
+function pick(sk) {
+  const s = series(sk);
+  return smooth === "roll" ? { v: s.roll, n: s.roll_n } : { v: s.median, n: s.n };
+}
+
+// 該序列最後一期有數據的索引，全無資料回 -1
+function lastIdx(sk) {
+  const m = pick(sk).v;
+  for (let i = m.length - 1; i >= 0; i--) if (m[i] !== null) return i;
+  return -1;
+}
+
+function pctHtml(v) {
+  if (v === null) return '<span class="text-slate-300">—</span>';
+  const cls = v > 0 ? "text-emerald-600 font-semibold"
+            : v < 0 ? "text-rose-600 font-semibold" : "text-slate-400";
+  return '<span class="' + cls + '">' + (v > 0 ? "+" : "") + v.toFixed(2) + '%</span>';
+}
+
+function isProvisional(lb) {
+  return freq === "month" && DATA.meta.provisional_months.indexOf(lb) >= 0;
+}
+
+/* ---------- 基準期下拉 ---------- */
+function fillBasePeriod(keep) {
+  const sel = document.getElementById("basePeriod");
+  const lb = labels(), anchor = pick("wuri_all").v;
+  sel.innerHTML = "";
+  lb.forEach(function (l, i) {
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = l + (anchor[i] !== null
+      ? "　烏日全區 " + anchor[i].toFixed(1) + " 萬"
+      : "　（烏日樣本不足）");
+    sel.appendChild(o);
+  });
+  // 預設落在 113 年波段高點；切換屋齡基準／取值時沿用同一期別
+  let chosen = (keep !== undefined && keep !== null && keep < lb.length) ? keep : -1;
+  if (chosen < 0) {
+    let best = -1, bestV = -1;
+    lb.forEach(function (l, i) {
+      if (l.indexOf("113") === 0 && anchor[i] !== null && anchor[i] > bestV) { bestV = anchor[i]; best = i; }
+    });
+    chosen = best >= 0 ? best : 0;
+  }
+  sel.value = chosen;
+}
+
+/* ---------- 卡片 ---------- */
+function renderCards() {
+  const bi = +document.getElementById("basePeriod").value;
+  const lb = labels();
+  document.getElementById("cards").innerHTML = ORDER.map(function (sk) {
+    const s = pick(sk), li = lastIdx(sk);
+    const label = DATA.meta.series_labels[sk];
+    if (li < 0) {
+      return '<div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700">'
+        + '<div class="text-xs text-slate-300">' + label + '</div>'
+        + '<div class="mt-3 text-sm text-slate-500">此屋齡基準下無足夠樣本</div></div>';
+    }
+    const nowV = s.v[li], baseV = s.v[bi];
+    const pct  = baseV === null ? null : ((nowV - baseV) / baseV) * 100;
+    const diff = baseV === null ? null : nowV - baseV;
+    const up = pct !== null && pct >= 0;
+    const badge = pct === null ? "bg-slate-600/40 text-slate-300"
+                : up ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300";
+    return '<div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700">'
+      + '<div class="flex justify-between items-start gap-2">'
+      +   '<span class="text-xs text-slate-300 leading-tight">' + label + '</span>'
+      +   '<span class="text-[11px] px-2 py-0.5 rounded-full ' + badge + ' font-bold whitespace-nowrap">'
+      +     (pct === null ? "基準不足" : (up ? "▲ " : "▼ ") + Math.abs(pct).toFixed(2) + "%")
+      +   '</span></div>'
+      + '<div class="mt-2 flex items-baseline gap-1.5">'
+      +   '<span class="text-2xl font-black text-white tnum">' + nowV.toFixed(1) + '</span>'
+      +   '<span class="text-xs text-slate-400">萬/坪</span></div>'
+      + '<div class="text-[11px] text-slate-400 tnum">' + lb[li] + '　n=' + s.n[li]
+      +   (isProvisional(lb[li]) ? "　未定案" : "") + '</div>'
+      + '<div class="text-xs text-slate-300 mt-2 flex justify-between gap-2 border-t border-slate-700/80 pt-2 tnum">'
+      +   '<span>基準 ' + lb[bi] + '：' + (baseV === null ? "不足" : baseV.toFixed(1) + " 萬") + '</span>'
+      +   '<span class="font-medium ' + (diff === null ? "text-slate-500" : diff < 0 ? "text-rose-400" : "text-emerald-400") + '">'
+      +     (diff === null ? "" : (diff >= 0 ? "+" : "") + diff.toFixed(1)) + '</span>'
+      + '</div></div>';
+  }).join("");
+}
+
+/* ---------- 圖 ---------- */
+function renderChart() {
+  const lb = labels();
+  const ds = ORDER.map(function (sk) {
+    const s = pick(sk);
+    return {
+      label: DATA.meta.series_labels[sk],
+      data: s.v,
+      _n: s.n,
+      borderColor: COLORS[sk].c,
+      backgroundColor: COLORS[sk].c + "14",
+      borderWidth: COLORS[sk].w,
+      tension: 0,              // 直線連接：低樣本序列用曲線平滑會製造不存在的過衝
+      pointRadius: 2,
+      pointHoverRadius: 5,
+      spanGaps: false          // 樣本不足不連線，避免視覺上的推估
+    };
+  });
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { labels: lb, datasets: ds },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "top", labels: { boxWidth: 14, usePointStyle: true, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: function (c) {
+              return c.raw === null
+                ? " " + c.dataset.label + ": 樣本不足"
+                : " " + c.dataset.label + ": " + c.raw + " 萬/坪 (n=" + c.dataset._n[c.dataIndex] + ")";
+            },
+            afterTitle: function (t) {
+              return isProvisional(lb[t[0].dataIndex]) ? "⚠ 資料仍在累積，數值可能上修" : "";
+            }
+          }
+        }
+      },
+      scales: {
+        y: { ticks: { callback: function (v) { return v + " 萬"; } }, grid: { color: "#f1f5f9" } },
+        x: { grid: { color: "#f8fafc" },
+             ticks: { maxRotation: 60, minRotation: 60, font: { size: 10 }, autoSkip: true, maxTicksLimit: 30 } }
+      }
+    }
+  });
+  const bi = +document.getElementById("basePeriod").value;
+  document.getElementById("chartStatus").textContent =
+    "基準期 " + lb[bi] + "　｜　" + (ageBase === "new" ? "新成屋 ≤5年" : "全屋齡")
+    + "　｜　" + (freq === "month" ? "月頻" : "季頻")
+    + "　｜　" + (smooth === "roll" ? DATA.meta.roll_window + " 期合併" : "單期");
+}
+
+/* ---------- 表 ---------- */
+function renderTable() {
+  const bi = +document.getElementById("basePeriod").value, lb = labels();
+  document.querySelector("#table thead").innerHTML =
+    '<tr><th class="py-3 px-3">期別</th>' + ORDER.map(function (sk) {
+      return '<th class="py-3 px-3 whitespace-nowrap" style="color:' + COLORS[sk].c + '">'
+        + DATA.meta.series_labels[sk] + '</th><th class="py-3 px-3 whitespace-nowrap">漲跌</th>';
+    }).join("") + '</tr>';
+
+  document.querySelector("#table tbody").innerHTML = lb.map(function (l, i) {
+    const hi = i === bi;
+    return '<tr class="hover:bg-slate-50 ' + (hi ? "bg-amber-50/70 font-semibold" : "") + '">'
+      + '<td class="py-2.5 px-3 font-mono whitespace-nowrap">' + l
+      +   (hi ? ' <span class="text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded">基準</span>' : "")
+      +   (isProvisional(l) ? ' <span class="text-[10px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">未定案</span>' : "")
+      + '</td>'
+      + ORDER.map(function (sk) {
+          const s = pick(sk), v = s.v[i], bv = s.v[bi];
+          const pct = (v === null || bv === null) ? null : ((v - bv) / bv) * 100;
+          return '<td class="py-2.5 px-3 whitespace-nowrap">'
+            + (v === null ? '<span class="text-slate-300">不足</span>' : v.toFixed(1))
+            + '<span class="text-slate-400 text-[11px] ml-1">(' + s.n[i] + ')</span></td>'
+            + '<td class="py-2.5 px-3">' + pctHtml(pct) + '</td>';
+        }).join("")
+      + '</tr>';
+  }).join("");
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = document.getElementById("filter").value.trim().toUpperCase();
+  document.querySelectorAll("#table tbody tr").forEach(function (tr) {
+    tr.style.display = tr.cells[0].textContent.toUpperCase().indexOf(q) >= 0 ? "" : "none";
+  });
+}
+
+/* ---------- 說明 ---------- */
+function renderMeta() {
+  const m = DATA.meta, lb = labels();
+  document.getElementById("subtitle").textContent =
+    "統計區間 " + lb[0] + " ～ " + lb[lb.length - 1]
+    + "　｜　全台灣、台中市、烏日全區、高鐵特區、明道商圈";
+  document.getElementById("minNote").textContent = m.min_n;
+
+  document.getElementById("provenance").innerHTML = [
+    ["產製時間",   m.generated_at],
+    ["收錄季檔",   m.seasons.length + " 季（最新 " + m.seasons[0] + "）"],
+    ["收錄旬檔",   m.periods.length + " 旬（最新 " + m.periods[0] + "）"],
+    ["清洗後紀錄", m.total_records.toLocaleString() + " 筆"]
+  ].map(function (kv) {
+    return '<div class="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">'
+      + '<div class="text-slate-400">' + kv[0] + '</div>'
+      + '<div class="font-semibold text-slate-700 mt-0.5 tnum">' + kv[1] + '</div></div>';
+  }).join("");
+
+  const d = m.definition;
+  const zoneHtml = Object.keys(m.zones).map(function (k) {
+    const z = m.zones[k];
+    return '<p><span class="font-medium">' + z.label + '</span>：'
+      + (z.streets ? z.streets.join("、") : "烏日區全區，不做門牌篩選") + '</p>';
+  }).join("");
+
+  document.getElementById("method").innerHTML =
+      '<div><div class="font-semibold text-slate-800 mb-1">實質單價定義</div>'
+    +   '<code class="bg-slate-100 px-2 py-1 rounded block">' + d.unit_price + '</code>'
+    +   '<p class="mt-1">先自總價與面積扣除車位，再換算為坪單價，避免含車位案件壓低單價。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">新成屋認定</div><p>' + d.new_build + '</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">代表值</div><p>' + d.statistic + '</p>'
+    +   '<p class="mt-1">「' + m.roll_window + ' 期合併」是把視窗內各期的<strong>交易明細倒在一起</strong>後取中位數，'
+    +   '而非對各期中位數再平均。低樣本分區（明道商圈每季僅 5～16 筆）的單期中位數鋸齒劇烈，'
+    +   '合併後才有可讀趨勢，且不會憑空造出資料點；表格中的 n 會同步顯示合併後的樣本數。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">納入建物型態</div><p>'
+    +   d.building_types.join("、") + '（排除透天厝、店面、廠辦等含大量土地價值、單價不可比者）</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">交屋遞延剔除</div>'
+    +   '<p>實價登錄當期揭露資料中含大量數年前簽約、近期才登記的案件。實測帶有「預售屋、或土地及建物分件登記案件」'
+    +   '備註者，申報遞延達 21～49 個月；不帶此備註者遞延為 −2～7 個月，兩者完全分離。本頁同時以備註標記與登記遞延'
+    +   '月數（上限 ' + d.max_registration_lag_months + ' 個月）雙重剔除，使各期數值反映當期實際市況。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">剔除之特殊交易備註關鍵字</div>'
+    +   '<p class="text-slate-500">' + d.excluded_remarks.join("、") + '</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">商圈範圍（依門牌路街名比對）</div>' + zoneHtml
+    +   '<p class="mt-1 text-slate-500">實價登錄成屋檔無社區名或里別欄位，僅有門牌字串，故商圈只能以路街白名單界定。'
+    +   '高鐵特區與明道商圈刻意不重疊；未落入任一白名單者僅計入烏日全區。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">已知限制</div><ul class="list-disc pl-5 space-y-1">'
+    +   '<li>最近 ' + m.provisional_months.length + ' 個月（' + (m.provisional_months.join("、") || "無")
+    +     '）資料仍在陸續申報揭露，數值可能上修，圖表與表格標為未定案。</li>'
+    +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別不輸出中位數，圖上呈現斷點，不做內插推估。</li>'
+    +   '<li>明道商圈屋齡結構偏舊、幾無新成屋供給，「新成屋」基準下多數期別樣本不足屬正常現象；'
+    +     '跨區比較請切換至「全屋齡」才有可比性。</li>'
+    +   '<li>全台灣序列為 22 縣市合併中位數，各期縣市組成變動會影響數值，僅作背景基準線參考。</li>'
+    +   '<li>季檔以登記日期而非交易日期切分，跨季合併已用「編號」去重。</li>'
+    + '</ul></div>';
+}
+
+/* ---------- 事件 ---------- */
+function paintToggle(id, val) {
+  document.querySelectorAll("#" + id + " button").forEach(function (b) {
+    const on = b.dataset.v === val;
+    b.className = "px-3 py-1.5 text-sm font-medium "
+      + (on ? "bg-white text-slate-900" : "bg-slate-800 text-slate-400 hover:text-slate-200");
+  });
+}
+
+function redraw(keepBase) {
+  fillBasePeriod(keepBase);
+  renderCards(); renderChart(); renderTable();
+}
+
+function init() {
+  paintToggle("freqToggle", freq);
+  paintToggle("baseToggle", ageBase);
+  paintToggle("smoothToggle", smooth);
+  document.getElementById("rollBtn").textContent = DATA.meta.roll_window + " 期合併";
+  renderMeta();
+  redraw();
+
+  document.querySelectorAll("#freqToggle button").forEach(function (b) {
+    b.onclick = function () {
+      freq = b.dataset.v; paintToggle("freqToggle", freq); renderMeta(); redraw();
+    };
+  });
+  document.querySelectorAll("#baseToggle button").forEach(function (b) {
+    b.onclick = function () {
+      ageBase = b.dataset.v; paintToggle("baseToggle", ageBase);
+      redraw(+document.getElementById("basePeriod").value);
+    };
+  });
+  document.querySelectorAll("#smoothToggle button").forEach(function (b) {
+    b.onclick = function () {
+      smooth = b.dataset.v; paintToggle("smoothToggle", smooth);
+      redraw(+document.getElementById("basePeriod").value);
+    };
+  });
+  document.getElementById("basePeriod").onchange = function () {
+    renderCards(); renderChart(); renderTable();
+  };
+  document.getElementById("filter").oninput = applyFilter;
+}
+
+fetch("data.json?v=" + Date.now())
+  .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(function (j) { DATA = j; init(); })
+  .catch(function (e) {
+    document.getElementById("subtitle").innerHTML =
+      '<span class="text-rose-600">無法載入 data.json（' + e.message
+      + '）—— 請先執行 scripts/ingest.py 與 scripts/aggregate.py</span>';
+  });
+</script>
+</body>
+</html>

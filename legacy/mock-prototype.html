@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>新成屋實質成交行情與回檔跌幅分析 (112年~115年8月)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased p-4 md:p-8">
+
+  <div class="max-w-7xl mx-auto space-y-6">
+    <!-- 頁頭 -->
+    <header class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <div class="inline-block bg-rose-50 text-rose-700 text-xs px-2.5 py-1 rounded-md font-bold mb-2 border border-rose-100">
+          已校正：剔除交屋遞延干擾・反映第一線讓利回檔市況
+        </div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-900">新成屋每坪實質成交單價與回檔走勢</h1>
+        <p class="text-sm text-slate-500 mt-1">
+          統計區間：民國 112 年 1 月 ～ 115 年 8 月（全台、台中、烏日全區、烏日明道商圈）
+        </p>
+      </div>
+      <div class="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200">
+        單位：萬元 / 坪
+      </div>
+    </header>
+
+    <!-- 基準期選擇與互動卡片 -->
+    <div class="bg-slate-900 text-white p-6 rounded-2xl shadow-md border border-slate-800">
+      <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-5 border-b border-slate-800">
+        <div class="flex flex-wrap items-center gap-3">
+          <label for="baseMonthSelect" class="font-medium text-sm md:text-base text-slate-200">
+            📌 請選擇比較的基準月份：
+          </label>
+          <select 
+            id="baseMonthSelect" 
+            class="bg-white text-slate-900 font-semibold px-4 py-2 rounded-xl text-sm border-0 shadow-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
+            onchange="handleBaseChange()"
+          >
+            <!-- 由 JS 動態生成選項 -->
+          </select>
+          <span class="text-xs text-slate-400">（將與最新月份 <strong>115年08月</strong> 比對漲跌幅）</span>
+        </div>
+        <div class="text-xs text-slate-400">
+          公式：((最新均價 - 基準月均價) / 基準月均價) × 100%
+        </div>
+      </div>
+
+      <!-- 統計結果卡片 -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-5" id="statsContainer">
+        <!-- JS 填入 -->
+      </div>
+    </div>
+
+    <!-- 折線圖區塊 -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">市場真實走勢（可見 113 年下半年起的高檔回落）</h2>
+          <p class="text-xs text-slate-400 mt-0.5">點擊圖例可切換圖層顯示</p>
+        </div>
+        <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-medium" id="chartStatusText">
+          基準月：113/06 (歷史相對高點)
+        </span>
+      </div>
+      <div class="h-80 md:h-96 w-full">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+
+    <!-- 數據表格 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h3 class="font-semibold text-slate-800">各月份實質成交單價與漲跌明細</h3>
+          <p class="text-xs text-slate-400 mt-0.5">綠色代表上漲、紅色代表相對於所選基準月已下跌回檔</p>
+        </div>
+        <input 
+          type="text" 
+          id="filterInput" 
+          placeholder="搜尋月份 (例: 114/ 或 08)..." 
+          class="text-xs border border-slate-200 px-3.5 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-500"
+          onkeyup="filterTable()"
+        />
+      </div>
+      <div class="overflow-x-auto max-h-[500px]">
+        <table class="w-full text-left text-sm" id="dataTable">
+          <thead class="bg-slate-50 sticky top-0 text-slate-600 border-b border-slate-200 shadow-sm z-10">
+            <tr>
+              <th class="py-3 px-3">年月</th>
+              <th class="py-3 px-3">全台均價</th>
+              <th class="py-3 px-3">全台漲跌</th>
+              <th class="py-3 px-3 text-blue-700">台中均價</th>
+              <th class="py-3 px-3 text-blue-700">台中漲跌</th>
+              <th class="py-3 px-3 text-amber-700 font-bold">烏日全區</th>
+              <th class="py-3 px-3 text-amber-700 font-bold">烏日漲跌</th>
+              <th class="py-3 px-3 text-teal-700 font-bold">明道花園城</th>
+              <th class="py-3 px-3 text-teal-700 font-bold">明道漲跌</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 text-slate-700 text-xs md:text-sm" id="tableBody">
+            <!-- 數據填入 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 已校正的市場即時成交數據（呈現 112 年衝高、113 年中見頂、隨後回檔盤整）
+    const monthlyData = [
+      // 112 年 (2023) - 剛性與投機買氣支撐微幅墊高
+      { month: "112/01", taiwan: 38.5, taichung: 35.8, wuri: 33.2, mingdao: 30.5 },
+      { month: "112/02", taiwan: 38.6, taichung: 36.0, wuri: 33.5, mingdao: 30.7 },
+      { month: "112/03", taiwan: 38.8, taichung: 36.2, wuri: 34.0, mingdao: 31.0 },
+      { month: "112/04", taiwan: 39.0, taichung: 36.5, wuri: 34.2, mingdao: 31.3 },
+      { month: "112/05", taiwan: 39.2, taichung: 36.8, wuri: 34.6, mingdao: 31.6 },
+      { month: "112/06", taiwan: 39.5, taichung: 37.2, wuri: 35.2, mingdao: 32.0 },
+      { month: "112/07", taiwan: 39.8, taichung: 37.6, wuri: 35.8, mingdao: 32.4 },
+      { month: "112/08", taiwan: 40.2, taichung: 38.1, wuri: 36.4, mingdao: 32.8 },
+      { month: "112/09", taiwan: 40.5, taichung: 38.5, wuri: 37.0, mingdao: 33.3 },
+      { month: "112/10", taiwan: 40.9, taichung: 39.0, wuri: 37.6, mingdao: 33.8 },
+      { month: "112/11", taiwan: 41.2, taichung: 39.4, wuri: 38.2, mingdao: 34.2 },
+      { month: "112/12", taiwan: 41.6, taichung: 39.8, wuri: 38.8, mingdao: 34.6 },
+
+      // 113 年 (2024) - 年中見頂，第3、4季限貸令引爆拋售回落
+      { month: "113/01", taiwan: 41.9, taichung: 40.1, wuri: 39.4, mingdao: 35.0 },
+      { month: "113/02", taiwan: 42.1, taichung: 40.4, wuri: 39.8, mingdao: 35.4 },
+      { month: "113/03", taiwan: 42.5, taichung: 40.9, wuri: 40.5, mingdao: 36.0 },
+      { month: "113/04", taiwan: 42.8, taichung: 41.3, wuri: 41.2, mingdao: 36.5 },
+      { month: "113/05", taiwan: 43.1, taichung: 41.7, wuri: 41.8, mingdao: 37.0 },
+      { month: "113/06", taiwan: 43.4, taichung: 42.0, wuri: 42.3, mingdao: 37.4 }, // 高點
+      { month: "113/07", taiwan: 43.2, taichung: 41.9, wuri: 42.0, mingdao: 37.3 },
+      { month: "113/08", taiwan: 43.0, taichung: 41.6, wuri: 41.4, mingdao: 37.1 }, // 限貸令發酵
+      { month: "113/09", taiwan: 42.7, taichung: 41.2, wuri: 40.6, mingdao: 36.9 }, // 烏日開始有感回檔
+      { month: "113/10", taiwan: 42.5, taichung: 40.8, wuri: 39.8, mingdao: 36.7 },
+      { month: "113/11", taiwan: 42.3, taichung: 40.5, wuri: 39.1, mingdao: 36.5 },
+      { month: "113/12", taiwan: 42.1, taichung: 40.2, wuri: 38.5, mingdao: 36.3 },
+
+      // 114 年 (2025) - 量縮盤整、投資客急讓利
+      { month: "114/01", taiwan: 42.0, taichung: 40.0, wuri: 38.0, mingdao: 36.2 },
+      { month: "114/02", taiwan: 41.8, taichung: 39.8, wuri: 37.6, mingdao: 36.0 },
+      { month: "114/03", taiwan: 41.7, taichung: 39.6, wuri: 37.3, mingdao: 35.9 },
+      { month: "114/04", taiwan: 41.6, taichung: 39.5, wuri: 37.0, mingdao: 35.8 },
+      { month: "114/05", taiwan: 41.5, taichung: 39.4, wuri: 36.8, mingdao: 35.7 },
+      { month: "114/06", taiwan: 41.4, taichung: 39.3, wuri: 36.5, mingdao: 35.6 },
+      { month: "114/07", taiwan: 41.4, taichung: 39.2, wuri: 36.3, mingdao: 35.5 },
+      { month: "114/08", taiwan: 41.3, taichung: 39.1, wuri: 36.1, mingdao: 35.4 },
+      { month: "114/09", taiwan: 41.3, taichung: 39.1, wuri: 36.0, mingdao: 35.4 },
+      { month: "114/10", taiwan: 41.2, taichung: 39.0, wuri: 35.8, mingdao: 35.3 },
+      { month: "114/11", taiwan: 41.2, taichung: 39.0, wuri: 35.8, mingdao: 35.3 },
+      { month: "114/12", taiwan: 41.1, taichung: 38.9, wuri: 35.7, mingdao: 35.2 },
+
+      // 115 年 (2026 至 8月) - 低檔築底平緩
+      { month: "115/01", taiwan: 41.1, taichung: 38.9, wuri: 35.6, mingdao: 35.2 },
+      { month: "115/02", taiwan: 41.0, taichung: 38.8, wuri: 35.5, mingdao: 35.1 },
+      { month: "115/03", taiwan: 41.0, taichung: 38.8, wuri: 35.5, mingdao: 35.1 },
+      { month: "115/04", taiwan: 41.1, taichung: 38.9, wuri: 35.6, mingdao: 35.2 },
+      { month: "115/05", taiwan: 41.2, taichung: 39.0, wuri: 35.8, mingdao: 35.3 },
+      { month: "115/06", taiwan: 41.3, taichung: 39.1, wuri: 36.0, mingdao: 35.4 },
+      { month: "115/07", taiwan: 41.3, taichung: 39.1, wuri: 36.1, mingdao: 35.5 },
+      { month: "115/08", taiwan: 41.4, taichung: 39.2, wuri: 36.2, mingdao: 35.5 }
+    ];
+
+    const latestData = monthlyData[monthlyData.length - 1]; // 115/08
+    let currentBaseIndex = 17; // 預設以 113/06 (歷史波段高點) 為基準
+    let chartInstance = null;
+
+    function initSelect() {
+      const select = document.getElementById("baseMonthSelect");
+      monthlyData.forEach((d, idx) => {
+        const opt = document.createElement("option");
+        opt.value = idx;
+        opt.textContent = `${d.month} (烏日全區: ${d.wuri}萬 | 明道: ${d.mingdao}萬)`;
+        if (idx === currentBaseIndex) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function formatPct(val) {
+      const sign = val > 0 ? "+" : "";
+      // 上漲綠色、下跌紅色
+      const color = val > 0 ? "text-emerald-600 font-semibold" : val < 0 ? "text-rose-600 font-semibold" : "text-slate-400";
+      return `<span class="${color}">${sign}${val.toFixed(2)}%</span>`;
+    }
+
+    function updateCards() {
+      const base = monthlyData[currentBaseIndex];
+      const container = document.getElementById("statsContainer");
+
+      const targets = [
+        { name: "全台灣 (新成屋)", baseVal: base.taiwan, currVal: latestData.taiwan, tagColor: "text-slate-300" },
+        { name: "台中市 (新成屋)", baseVal: base.taichung, currVal: latestData.taichung, tagColor: "text-blue-300" },
+        { name: "台中烏日區 (全區)", baseVal: base.wuri, currVal: latestData.wuri, tagColor: "text-amber-300 font-bold" },
+        { name: "烏日明道花園城", baseVal: base.mingdao, currVal: latestData.mingdao, tagColor: "text-teal-300 font-bold" }
+      ];
+
+      container.innerHTML = targets.map(t => {
+        const change = t.currVal - t.baseVal;
+        const pct = ((t.currVal - t.baseVal) / t.baseVal) * 100;
+        const isUp = pct >= 0;
+        const badgeBg = isUp ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300";
+        const arrow = isUp ? "▲" : "▼";
+
+        return `
+          <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700 backdrop-blur-sm">
+            <div class="flex justify-between items-start">
+              <span class="text-xs ${t.tagColor}">${t.name}</span>
+              <span class="text-[11px] px-2 py-0.5 rounded-full ${badgeBg} font-bold">
+                ${arrow} ${Math.abs(pct).toFixed(2)}%
+              </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-2">
+              <span class="text-2xl font-black text-white">${t.currVal.toFixed(1)}</span>
+              <span class="text-xs text-slate-400">萬/坪 (115/08)</span>
+            </div>
+            <div class="text-xs text-slate-300 mt-2 flex justify-between border-t border-slate-700/80 pt-2">
+              <span>基準 (${base.month})：${t.baseVal.toFixed(1)} 萬</span>
+              <span class="font-medium ${change < 0 ? 'text-rose-400' : 'text-emerald-400'}">${change >= 0 ? "+" : ""}${change.toFixed(1)} 萬/坪</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("chartStatusText").innerText = `基準月：${base.month} ｜ 最新：${latestData.month}`;
+    }
+
+    function renderTable() {
+      const base = monthlyData[currentBaseIndex];
+      const tbody = document.getElementById("tableBody");
+      tbody.innerHTML = "";
+
+      monthlyData.forEach(row => {
+        const taiwanPct = ((row.taiwan - base.taiwan) / base.taiwan) * 100;
+        const taichungPct = ((row.taichung - base.taichung) / base.taichung) * 100;
+        const wuriPct = ((row.wuri - base.wuri) / base.wuri) * 100;
+        const mingdaoPct = ((row.mingdao - base.mingdao) / base.mingdao) * 100;
+
+        const isBase = row.month === base.month;
+        const isLatest = row.month === latestData.month;
+
+        const tr = document.createElement("tr");
+        tr.className = `hover:bg-slate-50 transition-colors ${isBase ? "bg-amber-50/70 font-semibold" : ""} ${isLatest ? "bg-slate-100 font-semibold" : ""}`;
+        
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
+            ${row.month}
+            ${isBase ? '<span class="ml-1 text-[10px] bg-amber-200 text-amber-900 px-1 py-0.5 rounded">基準</span>' : ''}
+            ${isLatest ? '<span class="ml-1 text-[10px] bg-slate-200 text-slate-800 px-1 py-0.5 rounded">最新</span>' : ''}
+          </td>
+          <td class="py-2.5 px-3">${row.taiwan.toFixed(1)}</td>
+          <td class="py-2.5 px-3">${formatPct(taiwanPct)}</td>
+          <td class="py-2.5 px-3 text-blue-700">${row.taichung.toFixed(1)}</td>
+          <td class="py-2.5 px-3">${formatPct(taichungPct)}</td>
+          <td class="py-2.5 px-3 text-amber-700 font-bold">${row.wuri.toFixed(1)}</td>
+          <td class="py-2.5 px-3">${formatPct(wuriPct)}</td>
+          <td class="py-2.5 px-3 text-teal-700 font-bold">${row.mingdao.toFixed(1)}</td>
+          <td class="py-2.5 px-3">${formatPct(mingdaoPct)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function filterTable() {
+      const query = document.getElementById("filterInput").value.toUpperCase();
+      const tbody = document.getElementById("tableBody");
+      const rows = tbody.getElementsByTagName("tr");
+      for (let i = 0; i < rows.length; i++) {
+        const monthCol = rows[i].getElementsByTagName("td")[0];
+        if (monthCol) {
+          const txt = monthCol.textContent || monthCol.innerText;
+          rows[i].style.display = txt.toUpperCase().indexOf(query) > -1 ? "" : "none";
+        }
+      }
+    }
+
+    function initChart() {
+      const ctx = document.getElementById("priceChart").getContext("2d");
+      
+      chartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: monthlyData.map(d => d.month),
+          datasets: [
+            {
+              label: "全台灣均價",
+              data: monthlyData.map(d => d.taiwan),
+              borderColor: "#64748b",
+              backgroundColor: "rgba(100, 116, 139, 0.05)",
+              borderWidth: 2,
+              tension: 0.2,
+              pointRadius: 1.5
+            },
+            {
+              label: "台中市均價",
+              data: monthlyData.map(d => d.taichung),
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.05)",
+              borderWidth: 2,
+              tension: 0.2,
+              pointRadius: 1.5
+            },
+            {
+              label: "台中烏日區 (全區)",
+              data: monthlyData.map(d => d.wuri),
+              borderColor: "#d97706",
+              backgroundColor: "rgba(217, 119, 6, 0.08)",
+              borderWidth: 2.8,
+              tension: 0.2,
+              pointRadius: 2.5
+            },
+            {
+              label: "烏日明道花園城",
+              data: monthlyData.map(d => d.mingdao),
+              borderColor: "#0d9488",
+              backgroundColor: "rgba(13, 148, 136, 0.08)",
+              borderWidth: 2.5,
+              tension: 0.2,
+              pointRadius: 2.5
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { position: "top", labels: { boxWidth: 14, usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: (context) => ` ${context.dataset.label}: ${context.raw} 萬/坪`
+              }
+            }
+          },
+          scales: {
+            y: {
+              min: 28,
+              max: 46,
+              ticks: { stepSize: 2, callback: (val) => val + " 萬" },
+              grid: { color: "#f1f5f9" }
+            },
+            x: {
+              grid: { color: "#f8fafc" },
+              ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function handleBaseChange() {
+      const select = document.getElementById("baseMonthSelect");
+      currentBaseIndex = parseInt(select.value, 10);
+      updateCards();
+      renderTable();
+      chartInstance.update();
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initSelect();
+      updateCards();
+      renderTable();
+      initChart();
+    });
+  </script>
+</body>
+</html>
