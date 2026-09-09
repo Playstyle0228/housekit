@@ -22,10 +22,29 @@ python scripts/ingest.py               # 只抓尚未收錄的旬檔
 python scripts/aggregate.py
 ```
 
-## 部署
+## 部署與更新
 
 GitHub Pages：repo Settings → Pages → Source 選 `main` 分支的 `/docs` 目錄。
 `docs/index.html` 以相對路徑讀取同目錄的 `data.json`，無需後端。
+**設定過一次之後，每次 push 都會自動重新部署，不需要再手動操作。**
+
+線上位置：<https://playstyle0228.github.io/housekit/>
+
+### 三種刷新方式
+
+| 方式 | 觸發 | 下載量 |
+|---|---|---|
+| 自動排程 | 每月 1／11／21 日台北時間 10:00 | 約 14 MB |
+| 手動 | Actions → `sync-plvr` → Run workflow | 約 14 MB |
+| 手動＋補季檔 | 同上，勾選 `backfill` | 約 1.8 GB |
+| 本機 | `python scripts/ingest.py && python scripts/aggregate.py` | 約 14 MB |
+
+修改 `scripts/**`（例如調整 `zones.py` 的商圈範圍）並 push 後，workflow 也會
+自動重新聚合，避免 `docs/data.json` 與程式脫節。
+
+無新資料時不會產生 commit：`aggregate.py` 會比對現有 `docs/data.json`
+（排除 `generated_at`），內容一致就不動檔案，因此 CI 不會留下一堆只有
+時間戳不同的 commit。每次執行結果都寫進 Actions 的 Job Summary。
 
 ---
 

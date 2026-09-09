@@ -1,14 +1,21 @@
 name: sync-plvr
 
-# 內政部實價登錄每月 1、11、21 日揭露（每旬）。
-# 排程設在揭露後數小時，並用 UTC（台北時間 -8）。
+# 內政部實價登錄每月 1、11、21 日揭露（每旬）。排程設在揭露後數小時，
+# cron 用 UTC（台北時間 -8）。
 on:
   schedule:
     - cron: "0 2 1,11,21 * *"     # 台北時間 10:00
+  # 統計邏輯或分區定義變動時自動重新聚合，避免 docs/data.json 與程式脫節。
+  # GITHUB_TOKEN 產生的 commit 不會再觸發 workflow，不會遞迴。
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/sync.yml"
   workflow_dispatch:
     inputs:
       backfill:
-        description: "連季檔一起重新收錄（一次性，約 1.8 GB，耗時較久）"
+        description: "連季檔一起重新收錄（首次或補缺口用，約 1.8 GB，耗時較久）"
         type: boolean
         default: false
 
@@ -30,29 +37,55 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 收錄新來源（旬檔約 14 MB；backfill 時另加季檔）
+      - name: 收錄新來源
+        id: ingest
         run: |
+          set -o pipefail
           if [ "${{ inputs.backfill }}" = "true" ]; then
-            python scripts/ingest.py --backfill
+            python scripts/ingest.py --backfill | tee ingest.log
           else
-            python scripts/ingest.py
+            python scripts/ingest.py | tee ingest.log
           fi
 
       - name: 聚合成 docs/data.json
-        run: python scripts/aggregate.py
+        id: agg
+        run: |
+          set -o pipefail
+          python scripts/aggregate.py | tee aggregate.log
 
-      - name: Commit
+      - name: Commit & push
+        id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data docs/data.json
           if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "資料無變動，略過 commit"
           else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             git commit -m "chore(data): sync 實價登錄 $(date -u +%Y-%m-%d)"
             git push
           fi
 
-      - name: 部署 GitHub Pages
-        if: success()
-        run: echo "Pages 由 repo Settings → Pages → Source: main /docs 提供，push 後自動更新"
+      - name: 執行摘要
+        if: always()
+        run: |
+          {
+            echo "### 實價登錄同步結果"
+            echo
+            if [ "${{ steps.commit.outputs.changed }}" = "true" ]; then
+              echo "**有新資料，已 commit 並推送。** GitHub Pages 會自動重新部署。"
+            else
+              echo "**無新資料，未產生 commit。**"
+            fi
+            echo
+            echo '#### 收錄'
+            echo '```'
+            cat ingest.log 2>/dev/null || echo "（無輸出）"
+            echo '```'
+            echo '#### 聚合'
+            echo '```'
+            cat aggregate.log 2>/dev/null || echo "（無輸出）"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

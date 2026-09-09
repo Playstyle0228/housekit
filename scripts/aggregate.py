@@ -197,6 +197,24 @@ def main():
         "quarter": {"labels": qlabels, "data": emit(quarters, qlabels)},
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+
+    # generated_at 每次都會變，若照寫則 CI 每次執行都產生一個只有時間戳不同的
+    # commit。內容（排除 generated_at）與現有檔一致時就不動檔案，讓 CI 的
+    # git diff 判斷得以正確略過。
+    if os.path.exists(OUT):
+        try:
+            with open(OUT, encoding="utf-8") as f:
+                old = json.load(f)
+            a, b = json.loads(json.dumps(data)), old
+            a["meta"].pop("generated_at", None)
+            b["meta"].pop("generated_at", None)
+            if a == b:
+                print("聚合結果與現有 %s 一致，未變更檔案（原始紀錄 %d 筆）"
+                      % (OUT, len(rows)), flush=True)
+                return
+        except (ValueError, KeyError):
+            pass        # 現有檔損壞或格式不符，直接覆寫
+
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     print("寫出 %s (%.1f KB)｜原始紀錄 %d 筆｜月 %d 期｜季 %d 期｜未定案 %s"
