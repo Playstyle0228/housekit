@@ -68,7 +68,7 @@
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
       <div>
         <h2 class="text-lg font-semibold text-slate-900">實質成交單價走勢</h2>
-        <p class="text-xs text-slate-400 mt-0.5">線段中斷 = 樣本數不足（n &lt; <span id="minNote">3</span>），不做內插推估。低樣本分區建議切換「3 期合併」。點擊圖例可切換圖層</p>
+        <p class="text-xs text-slate-400 mt-0.5">虛線＋空心點 = 樣本數不足（n &lt; <span id="minNote">3</span>），數值仍為真實成交但代表性有限；線段中斷 = 該期完全無成交，不做內插推估。低樣本分區建議切換「3 期合併」。點擊圖例可切換圖層</p>
       </div>
       <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-medium tnum" id="chartStatus"></span>
     </div>
@@ -79,7 +79,7 @@
     <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
       <div>
         <h3 class="font-semibold text-slate-800">各期中位數、樣本數與漲跌明細</h3>
-        <p class="text-xs text-slate-400 mt-0.5">綠色上漲、紅色回檔；灰字括號為樣本數 n</p>
+        <p class="text-xs text-slate-400 mt-0.5">綠色上漲、紅色回檔；括號為樣本數 n，琥珀底色與 ⚠ 表示樣本不足</p>
       </div>
       <input type="text" id="filter" placeholder="搜尋期別（例：114/ 或 Q3）…"
         class="text-xs border border-slate-200 px-3.5 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400" />
@@ -118,11 +118,14 @@ function cur()        { return DATA[freq]; }
 function labels()     { return cur().labels; }
 function series(sk)   { return cur().data[sk][ageBase]; }
 
-/* 依「取值」設定回傳中位數與樣本數。
-   roll = 視窗內各期交易明細合併後取中位數（非各期中位數再平均）。 */
+/* 依「取值」設定回傳中位數、樣本數與樣本不足旗標。
+   roll = 視窗內各期交易明細合併後取中位數（非各期中位數再平均）。
+   low  = 0 < n < min_n，數值照樣輸出，僅加註樣本不足。 */
 function pick(sk) {
   const s = series(sk);
-  return smooth === "roll" ? { v: s.roll, n: s.roll_n } : { v: s.median, n: s.n };
+  return smooth === "roll"
+    ? { v: s.roll, n: s.roll_n, low: s.roll_low }
+    : { v: s.median, n: s.n, low: s.low };
 }
 
 // 該序列最後一期有數據的索引，全無資料回 -1
@@ -146,14 +149,14 @@ function isProvisional(lb) {
 /* ---------- 基準期下拉 ---------- */
 function fillBasePeriod(keep) {
   const sel = document.getElementById("basePeriod");
-  const lb = labels(), anchor = pick("wuri_all").v;
+  const a = pick("wuri_all"), lb = labels(), anchor = a.v;
   sel.innerHTML = "";
   lb.forEach(function (l, i) {
     const o = document.createElement("option");
     o.value = i;
     o.textContent = l + (anchor[i] !== null
-      ? "　烏日全區 " + anchor[i].toFixed(1) + " 萬"
-      : "　（烏日樣本不足）");
+      ? "　烏日全區 " + anchor[i].toFixed(1) + " 萬" + (a.low[i] ? " ⚠" : "")
+      : "　（烏日該期無成交）");
     sel.appendChild(o);
   });
   // 預設落在 113 年波段高點；切換屋齡基準／取值時沿用同一期別
@@ -178,7 +181,7 @@ function renderCards() {
     if (li < 0) {
       return '<div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700">'
         + '<div class="text-xs text-slate-300">' + label + '</div>'
-        + '<div class="mt-3 text-sm text-slate-500">此屋齡基準下無足夠樣本</div></div>';
+        + '<div class="mt-3 text-sm text-slate-500">此屋齡基準下全期無成交</div></div>';
     }
     const nowV = s.v[li], baseV = s.v[bi];
     const pct  = baseV === null ? null : ((nowV - baseV) / baseV) * 100;
@@ -186,19 +189,26 @@ function renderCards() {
     const up = pct !== null && pct >= 0;
     const badge = pct === null ? "bg-slate-600/40 text-slate-300"
                 : up ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300";
-    return '<div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700">'
+    // 現值或基準值任一為低樣本，漲跌幅本身就不可靠，整張卡片降級提示
+    const shaky = s.low[li] || (baseV !== null && s.low[bi]);
+    return '<div class="bg-slate-800/80 p-4 rounded-xl border '
+      +   (shaky ? "border-amber-600/60" : "border-slate-700") + '">'
       + '<div class="flex justify-between items-start gap-2">'
       +   '<span class="text-xs text-slate-300 leading-tight">' + label + '</span>'
       +   '<span class="text-[11px] px-2 py-0.5 rounded-full ' + badge + ' font-bold whitespace-nowrap">'
-      +     (pct === null ? "基準不足" : (up ? "▲ " : "▼ ") + Math.abs(pct).toFixed(2) + "%")
+      +     (pct === null ? "基準無成交" : (up ? "▲ " : "▼ ") + Math.abs(pct).toFixed(2) + "%")
       +   '</span></div>'
       + '<div class="mt-2 flex items-baseline gap-1.5">'
-      +   '<span class="text-2xl font-black text-white tnum">' + nowV.toFixed(1) + '</span>'
+      +   '<span class="text-2xl font-black ' + (shaky ? "text-amber-200" : "text-white") + ' tnum">'
+      +     nowV.toFixed(1) + '</span>'
       +   '<span class="text-xs text-slate-400">萬/坪</span></div>'
-      + '<div class="text-[11px] text-slate-400 tnum">' + lb[li] + '　n=' + s.n[li]
+      + '<div class="text-[11px] tnum ' + (s.low[li] ? "text-amber-400" : "text-slate-400") + '">'
+      +   lb[li] + '　n=' + s.n[li]
+      +   (s.low[li] ? "　⚠ 樣本不足" : "")
       +   (isProvisional(lb[li]) ? "　未定案" : "") + '</div>'
       + '<div class="text-xs text-slate-300 mt-2 flex justify-between gap-2 border-t border-slate-700/80 pt-2 tnum">'
-      +   '<span>基準 ' + lb[bi] + '：' + (baseV === null ? "不足" : baseV.toFixed(1) + " 萬") + '</span>'
+      +   '<span>基準 ' + lb[bi] + '：'
+      +     (baseV === null ? "無成交" : baseV.toFixed(1) + " 萬" + (s.low[bi] ? " ⚠" : "")) + '</span>'
       +   '<span class="font-medium ' + (diff === null ? "text-slate-500" : diff < 0 ? "text-rose-400" : "text-emerald-400") + '">'
       +     (diff === null ? "" : (diff >= 0 ? "+" : "") + diff.toFixed(1)) + '</span>'
       + '</div></div>';
@@ -214,13 +224,23 @@ function renderChart() {
       label: DATA.meta.series_labels[sk],
       data: s.v,
       _n: s.n,
+      _low: s.low,
       borderColor: COLORS[sk].c,
       backgroundColor: COLORS[sk].c + "14",
       borderWidth: COLORS[sk].w,
       tension: 0,              // 直線連接：低樣本序列用曲線平滑會製造不存在的過衝
-      pointRadius: 2,
-      pointHoverRadius: 5,
-      spanGaps: false          // 樣本不足不連線，避免視覺上的推估
+      pointHoverRadius: 6,
+      spanGaps: false,         // 該期無成交則不連線，避免視覺上的推估
+      // 樣本不足的點以空心放大呈現、其相鄰線段改虛線，數值照樣顯示
+      pointRadius: function (c) { return s.low[c.dataIndex] ? 3.5 : 2; },
+      pointBackgroundColor: function (c) { return s.low[c.dataIndex] ? "#ffffff" : COLORS[sk].c; },
+      pointBorderColor: COLORS[sk].c,
+      pointBorderWidth: function (c) { return s.low[c.dataIndex] ? 2 : 1; },
+      segment: {
+        borderDash: function (c) {
+          return (s.low[c.p0DataIndex] || s.low[c.p1DataIndex]) ? [4, 3] : undefined;
+        }
+      }
     };
   });
   if (chart) chart.destroy();
@@ -236,9 +256,9 @@ function renderChart() {
         tooltip: {
           callbacks: {
             label: function (c) {
-              return c.raw === null
-                ? " " + c.dataset.label + ": 樣本不足"
-                : " " + c.dataset.label + ": " + c.raw + " 萬/坪 (n=" + c.dataset._n[c.dataIndex] + ")";
+              if (c.raw === null) return " " + c.dataset.label + ": 該期無成交";
+              return " " + c.dataset.label + ": " + c.raw + " 萬/坪 (n=" + c.dataset._n[c.dataIndex] + ")"
+                + (c.dataset._low[c.dataIndex] ? " ⚠ 樣本不足" : "");
             },
             afterTitle: function (t) {
               return isProvisional(lb[t[0].dataIndex]) ? "⚠ 資料仍在累積，數值可能上修" : "";
@@ -279,10 +299,14 @@ function renderTable() {
       + ORDER.map(function (sk) {
           const s = pick(sk), v = s.v[i], bv = s.v[bi];
           const pct = (v === null || bv === null) ? null : ((v - bv) / bv) * 100;
-          return '<td class="py-2.5 px-3 whitespace-nowrap">'
-            + (v === null ? '<span class="text-slate-300">不足</span>' : v.toFixed(1))
-            + '<span class="text-slate-400 text-[11px] ml-1">(' + s.n[i] + ')</span></td>'
-            + '<td class="py-2.5 px-3">' + pctHtml(pct) + '</td>';
+          const lo = s.low[i];
+          return '<td class="py-2.5 px-3 whitespace-nowrap' + (lo ? " bg-amber-50/60" : "") + '">'
+            + (v === null
+                ? '<span class="text-slate-300">無成交</span>'
+                : '<span class="' + (lo ? "text-amber-700" : "") + '">' + v.toFixed(1) + '</span>')
+            + '<span class="text-[11px] ml-1 ' + (lo ? "text-amber-600 font-medium" : "text-slate-400") + '">('
+            + s.n[i] + (lo ? " ⚠" : "") + ')</span></td>'
+            + '<td class="py-2.5 px-3' + (lo ? " bg-amber-50/60" : "") + '">' + pctHtml(pct) + '</td>';
         }).join("")
       + '</tr>';
   }).join("");
@@ -345,9 +369,9 @@ function renderMeta() {
     + '<div><div class="font-semibold text-slate-800 mb-1">已知限制</div><ul class="list-disc pl-5 space-y-1">'
     +   '<li>最近 ' + m.provisional_months.length + ' 個月（' + (m.provisional_months.join("、") || "無")
     +     '）資料仍在陸續申報揭露，數值可能上修，圖表與表格標為未定案。</li>'
-    +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別不輸出中位數，圖上呈現斷點，不做內插推估。</li>'
-    +   '<li>明道商圈屋齡結構偏舊、幾無新成屋供給，「新成屋」基準下多數期別樣本不足屬正常現象；'
-    +     '跨區比較請切換至「全屋齡」才有可比性。</li>'
+    +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別<strong>仍輸出中位數</strong>並標記 ⚠：單筆成交的中位數就是該筆本身、統計代表性有限，但它是真實成交價，不予隱藏。該期完全無成交才輸出空值、圖上呈現斷點，不做內插推估。</li>'
+    +   '<li>明道商圈屋齡結構偏舊、幾無新成屋供給（清洗後 115S2 全季 0 筆新成屋），'
+    +     '「新成屋」基準下該區多為無成交；跨區比較請切換至「全屋齡」才有可比性。</li>'
     +   '<li>全台灣序列為 22 縣市合併中位數，各期縣市組成變動會影響數值，僅作背景基準線參考。</li>'
     +   '<li>季檔以登記日期而非交易日期切分，跨季合併已用「編號」去重。</li>'
     + '</ul></div>';

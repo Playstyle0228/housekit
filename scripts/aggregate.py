@@ -22,7 +22,7 @@ from zones import ZONES, zones_of                                  # noqa: E402
 OUT = os.path.join(store.ROOT, "docs", "data.json")
 
 START_YM = (112, 1)      # 統計起點
-MIN_N = 3                # 樣本數低於此值視為不足，中位數輸出 null
+MIN_N = 3                # 樣本數低於此值標記為不足（仍輸出中位數，由前端加註）
 TAICHUNG = "b"
 
 # 尾端期別的資料完整度控制。
@@ -109,16 +109,22 @@ def emit(bucket, labels):
     合併樣本中位數是把視窗內各期的「交易明細」倒在一起後取中位數，
     而非對各期中位數再取平均。低樣本分區（如明道商圈每季僅 5～16 筆）
     的單期中位數鋸齒劇烈，合併後才有可讀的趨勢，且不會憑空造出資料點。
+
+    樣本數不足（0 < n < MIN_N）時仍輸出中位數，另以 low / roll_low 標記，
+    由前端加註；只有 n = 0 才輸出 null。單筆成交的「中位數」就是那一筆本身、
+    統計意義有限，但它仍是真實成交價，不予隱藏。
     """
     out = {}
     for sk in SERIES:
         out[sk] = {}
         for base in BASES:
-            med, cnt, p25, p75, roll, roll_n = [], [], [], [], [], []
+            med, cnt, low, p25, p75 = [], [], [], [], []
+            roll, roll_n, roll_low = [], [], []
             for i, lb in enumerate(labels):
                 v = bucket.get(lb, {}).get(sk, {}).get(base, [])
                 cnt.append(len(v))
-                if len(v) >= MIN_N:
+                low.append(0 < len(v) < MIN_N)
+                if v:
                     med.append(round(_median(v), 2))
                     p25.append(round(_pct(v, 0.25), 2))
                     p75.append(round(_pct(v, 0.75), 2))
@@ -129,10 +135,12 @@ def emit(bucket, labels):
                 for lb2 in labels[max(0, i - ROLL_WINDOW + 1):i + 1]:
                     pool.extend(bucket.get(lb2, {}).get(sk, {}).get(base, []))
                 roll_n.append(len(pool))
-                roll.append(round(_median(pool), 2) if len(pool) >= MIN_N else None)
+                roll_low.append(0 < len(pool) < MIN_N)
+                roll.append(round(_median(pool), 2) if pool else None)
 
-            out[sk][base] = {"median": med, "n": cnt, "p25": p25, "p75": p75,
-                             "roll": roll, "roll_n": roll_n}
+            out[sk][base] = {"median": med, "n": cnt, "low": low,
+                             "p25": p25, "p75": p75,
+                             "roll": roll, "roll_n": roll_n, "roll_low": roll_low}
     return out
 
 
