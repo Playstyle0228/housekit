@@ -61,7 +61,7 @@
       </div>
       <div class="text-xs text-slate-400 tnum">漲跌幅 =（最新中位數 − 基準期中位數）÷ 基準期中位數</div>
     </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 pt-5" id="cards"></div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-5" id="cards"></div>
   </div>
 
   <div class="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-100">
@@ -106,11 +106,16 @@
 const COLORS = {
   tw:           { c: "#94a3b8", w: 1.8 },
   taichung:     { c: "#2563eb", w: 1.8 },
-  wuri_all:     { c: "#d97706", w: 3.0 },
+  wuri_all:     { c: "#d97706", w: 3.2 },
   wuri_hsr:     { c: "#7c3aed", w: 2.2 },
-  wuri_mingdao: { c: "#0d9488", w: 2.6 }
+  wuri_mingdao: { c: "#0d9488", w: 2.8 },
+  wuri_station: { c: "#e11d48", w: 2.0 },
+  wuri_xinan:   { c: "#65a30d", w: 2.0 }
 };
-const ORDER = ["tw", "taichung", "wuri_all", "wuri_hsr", "wuri_mingdao"];
+const ORDER = ["tw", "taichung", "wuri_all", "wuri_hsr", "wuri_mingdao",
+               "wuri_station", "wuri_xinan"];
+// 七條線同時顯示過於雜亂；預設只開主要比較對象，其餘點圖例即可開啟
+const DEFAULT_HIDDEN = ["tw", "wuri_station", "wuri_xinan"];
 
 let DATA = null, freq = "quarter", ageBase = "new", smooth = "raw", chart = null;
 
@@ -236,6 +241,7 @@ function renderChart() {
       pointBackgroundColor: function (c) { return s.low[c.dataIndex] ? "#ffffff" : COLORS[sk].c; },
       pointBorderColor: COLORS[sk].c,
       pointBorderWidth: function (c) { return s.low[c.dataIndex] ? 2 : 1; },
+      hidden: DEFAULT_HIDDEN.indexOf(sk) >= 0,
       segment: {
         borderDash: function (c) {
           return (s.low[c.p0DataIndex] || s.low[c.p1DataIndex]) ? [4, 3] : undefined;
@@ -325,7 +331,8 @@ function renderMeta() {
   const m = DATA.meta, lb = labels();
   document.getElementById("subtitle").textContent =
     "統計區間 " + lb[0] + " ～ " + lb[lb.length - 1]
-    + "　｜　全台灣、台中市、烏日全區、高鐵特區、明道商圈";
+    + "　｜　" + ["全台灣", "台中市"].concat(
+        Object.keys(m.zones).map(function (k) { return m.zones[k].label; })).join("、");
   document.getElementById("minNote").textContent = m.min_n;
 
   document.getElementById("provenance").innerHTML = [
@@ -342,8 +349,10 @@ function renderMeta() {
   const d = m.definition;
   const zoneHtml = Object.keys(m.zones).map(function (k) {
     const z = m.zones[k];
-    return '<p><span class="font-medium">' + z.label + '</span>：'
-      + (z.streets ? z.streets.join("、") : "烏日區全區，不做門牌篩選") + '</p>';
+    if (!z.streets) return '<p class="mb-1"><span class="font-medium">' + z.label + '</span>：烏日區全區，不做門牌篩選</p>';
+    return '<p class="mb-1"><span class="font-medium">' + z.label + '</span>'
+      + '<span class="text-slate-400">（' + z.li.join("、") + '）</span>：'
+      + z.streets.slice().sort(function (a, b) { return a.localeCompare(b, "zh-Hant"); }).join("、") + '</p>';
   }).join("");
 
   document.getElementById("method").innerHTML =
@@ -363,15 +372,25 @@ function renderMeta() {
     +   '月數（上限 ' + d.max_registration_lag_months + ' 個月）雙重剔除，使各期數值反映當期實際市況。</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">剔除之特殊交易備註關鍵字</div>'
     +   '<p class="text-slate-500">' + d.excluded_remarks.join("、") + '</p></div>'
-    + '<div><div class="font-semibold text-slate-800 mb-1">商圈範圍（依門牌路街名比對）</div>' + zoneHtml
-    +   '<p class="mt-1 text-slate-500">實價登錄成屋檔無社區名或里別欄位，僅有門牌字串，故商圈只能以路街白名單界定。'
-    +   '高鐵特區與明道商圈刻意不重疊；未落入任一白名單者僅計入烏日全區。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">生活圈範圍（路街名 → 里 → 生活圈）</div>' + zoneHtml
+    +   '<p class="mt-2 text-slate-500">實價登錄成屋檔沒有社區名稱或里別欄位（只有預售屋 B 檔才有「建案名稱」），'
+    +   '只有門牌字串，所以分區只能靠路街名比對。里別是把資料中實際出現的 50 條路街逐條做地理編碼'
+    +   '（OpenStreetMap Nominatim，2026-09）取得，屬一次性離線作業，執行期不依賴外部服務。</p>'
+    +   '<p class="mt-1 text-slate-500">分區沿用樂居的四個生活圈。高鐵特區依都市計畫範圍涵蓋三和里、榮泉里、'
+    +   '學田里、湖日里；明道花園生活圈定義為中山路一段與興祥街交叉口半徑約 700 公尺，即九德里與仁德里'
+    +   '一帶（舊地名「楓樹腳」）；烏日車站生活圈為舊市區，即烏日里、東園里。兩種判準交叉驗證一致：'
+    +   '歸入明道花園的 9 條路距明道中學 170～678 公尺，全數在 700 公尺內；歸入烏日車站的 6 條路為'
+    +   '702～1261 公尺，全數在 700 公尺外。</p>'
+    +   '<p class="mt-1 text-slate-500">各生活圈刻意不重疊，未落入任一生活圈者僅計入烏日全區'
+    +   '（目前僅五光路 5 筆，佔烏日區 0.3%）。</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">已知限制</div><ul class="list-disc pl-5 space-y-1">'
     +   '<li>最近 ' + m.provisional_months.length + ' 個月（' + (m.provisional_months.join("、") || "無")
     +     '）資料仍在陸續申報揭露，數值可能上修，圖表與表格標為未定案。</li>'
     +   '<li>樣本數 n &lt; ' + m.min_n + ' 的期別<strong>仍輸出中位數</strong>並標記 ⚠：單筆成交的中位數就是該筆本身、統計代表性有限，但它是真實成交價，不予隱藏。該期完全無成交才輸出空值、圖上呈現斷點，不做內插推估。</li>'
-    +   '<li>明道商圈屋齡結構偏舊、幾無新成屋供給（清洗後 115S2 全季 0 筆新成屋），'
-    +     '「新成屋」基準下該區多為無成交；跨區比較請切換至「全屋齡」才有可比性。</li>'
+    +   '<li>明道花園生活圈屋齡結構偏舊、幾無新成屋供給，「新成屋」基準下多數期別為無成交或'
+    +     '僅 1～2 筆；跨區比較請切換至「全屋齡」才有可比性。</li>'
+    +   '<li>公園路（43 筆）經地理編碼屬湖日里，而湖日里在高鐵特區都市計畫範圍內，故歸為高鐵特區；'
+    +     '但樂居的區域分析文將「公園路重劃一帶」描述為舊市區。此為已知分歧。</li>'
     +   '<li>全台灣序列為 22 縣市合併中位數，各期縣市組成變動會影響數值，僅作背景基準線參考。</li>'
     +   '<li>季檔以登記日期而非交易日期切分，跨季合併已用「編號」去重。</li>'
     + '</ul></div>';

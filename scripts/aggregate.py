@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetch                                                       # noqa: E402
 import store                                                       # noqa: E402
 from clean import BUILDING_TYPES, SPECIAL_REMARKS, ym_index        # noqa: E402
-from zones import ZONES, zones_of                                  # noqa: E402
+from zones import STREET_LI, ZONES, zones_of                     # noqa: E402
 
 OUT = os.path.join(store.ROOT, "docs", "data.json")
 
@@ -189,7 +189,15 @@ def main():
                 "excluded_remarks": SPECIAL_REMARKS,
                 "max_registration_lag_months": 6,
             },
-            "zones": {k: {"label": v["label"], "streets": v["streets"]} for k, v in ZONES.items()},
+            "zones": {
+                k: {
+                    "label": v["label"],
+                    "li": v["li"],
+                    "streets": (sorted((s for s, li in STREET_LI.items() if li in v["li"]),
+                                       key=len, reverse=True) if v["li"] else None),
+                }
+                for k, v in ZONES.items()
+            },
             "series_labels": dict({"tw": "全台灣", "taichung": "台中市"},
                                   **{k: v["label"] for k, v in ZONES.items()}),
         },
