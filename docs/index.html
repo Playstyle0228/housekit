@@ -405,7 +405,14 @@ function renderMeta() {
   }).join("");
 
   document.getElementById("method").innerHTML =
-      '<div><div class="font-semibold text-slate-800 mb-1">實質單價定義</div>'
+      '<div class="bg-amber-50 border border-amber-100 rounded-lg p-3">'
+    +   '<div class="font-semibold text-amber-900 mb-1">期別口徑：按交易日，不是按登記日</div>'
+    +   '<p>各期一律以「交易年月日」分月／分季。<strong>這會造成本頁數字與其他房價網站不同</strong>——'
+    +   '實價登錄的季檔本身按登記日期切分（如 115S2 = 登記 115/3/11～6/10），而檔內交易日期跨越數年。'
+    +   '同一批資料用兩種口徑統計差異不小：烏日全區新成屋在登記季 115S2 為 47.32 萬（n=89），'
+    +   '在交易季 115/Q2 為 45.26 萬（n=71），兩者僅重疊 19 筆。</p>'
+    +   '<p class="mt-1">本頁採交易日口徑，因為目的是反映當月實際成交行情；代價是最近數期樣本仍在累積。</p></div>'
+    + '<div><div class="font-semibold text-slate-800 mb-1">實質單價定義</div>'
     +   '<code class="bg-slate-100 px-2 py-1 rounded block">' + d.unit_price + '</code>'
     +   '<p class="mt-1">先自總價與面積扣除車位，再換算為坪單價，避免含車位案件壓低單價。</p></div>'
     + '<div><div class="font-semibold text-slate-800 mb-1">新成屋認定</div><p>' + d.new_build + '</p></div>'
